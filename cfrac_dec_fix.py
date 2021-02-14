@@ -1,4 +1,8 @@
 from decimal import getcontext, Decimal
+import itertools
+from multiprocessing import Pool
+from typing import Iterator
+import os
 
 getcontext().prec = 500
 
@@ -74,6 +78,14 @@ class Frac():
             while frac_part > 0:
                 place = (frac_part * base) // 1
                 new_frac_part = (frac_part * base) - place
+
+                if Decimal(1.0) - new_frac_part < 1e-10:
+                    yield place + 1
+                    return
+                if new_frac_part < 1e-10:
+                    yield place
+                    return
+
                 yield place
 
                 frac_part = new_frac_part
@@ -113,15 +125,35 @@ def stern_brocot():
         yield retval
 
 
+def pretty_print(base_range: range, sb_range: range,
+                 min_num_places: int):
+    for i, sb in enumerate(itertools.islice(
+            fractions(), sb_range.start, sb_range.stop)):
+        for b in base_range:
+            base_extension = sb.to_base(b)
+            cfrac = sb.to_cfrac()
+            if len(cfrac.sequence) > min_num_places and cfrac.sequence[1:] == base_extension.frac_digits and 0 == base_extension.integer:
+                frac_part = "0."
+                for fd in base_extension.frac_digits:
+                    fd: Decimal
+                    frac_part += "{:.0f}".format(fd)
+                print(sb_range.start + i + 1, f"$\\nicefrac{{{sb.numerator}}}{{{sb.denominator}}}$", base_extension.integer, b,
+                      frac_part, f"${cfrac}$ ", sep=" & ", end="\\\\\n")
+
+
+CPU_COUNT = os.cpu_count()
+MIN_COVERAGE = 1e4
+CHUNK_LENGTH = int(MIN_COVERAGE // max(CPU_COUNT - 1, 1))
+
+
 def main():
-    sb_iter = fractions()
-    for i in range(10000000):
-        sb = next(sb_iter)
-        base_extension = sb.to_base(10)
-        cfrac = sb.to_cfrac()
-        #print(i+1, sb, base_extension, cfrac)
-        if cfrac.sequence[1:] == base_extension.frac_digits:
-            print(i+1, "found a match!", sb, base_extension, cfrac)
+    with Pool(CPU_COUNT) as pool:
+
+        print(f"Will now run parallelized with {CPU_COUNT} threads")
+        base_range = range(2, 1000)
+
+        pool.starmap(pretty_print, [(
+            base_range, range(i * CHUNK_LENGTH, (i+1) * CHUNK_LENGTH), 1) for i in range(CPU_COUNT)])
 
 
 if __name__ == '__main__':
